@@ -1,0 +1,105 @@
+name: Build Luna 18 Android APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out luna_18 gameplay
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Get tested luna_16 Android foundation
+        uses: actions/checkout@v4
+        with:
+          repository: 752960522qq-ai/luna_16
+          ref: cc4138419462dd25df3fd539aa98a9ec9df0e7f4
+          path: .android-source
+          persist-credentials: false
+
+      - name: Import missing Android build project (preserve luna_18 engine.js)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/src/main/assets/engine.js
+          if [ ! -f app/build.gradle ]; then
+            rsync -a --exclude='src/main/assets/engine.js' .android-source/app/ app/
+            cp .android-source/build.gradle .android-source/gradle.properties .android-source/settings.gradle .android-source/.gitignore ./
+            cp -a .android-source/scripts .android-source/tests ./
+            echo "BOOTSTRAPPED=true" >> "$GITHUB_ENV"
+          fi
+          test -s app/src/main/assets/index.html
+          test -s app/src/main/AndroidManifest.xml
+          test -s app/src/main/assets/models/2s19.glb
+          test -s app/src/main/assets/models/m1097_friendly.glb
+          rm -rf .android-source
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify game rules and infinite currency
+        run: |
+          node tests/engine.test.js
+          node tests/garage.test.cjs
+          node tests/artillery-expansion.test.cjs
+          node tests/infinite-currency.test.cjs
+          python3 tests/models.test.py
+
+      - name: Build infinite-currency Android APK
+        run: gradle assembleDebug -PinfiniteCoins=true
+
+      - name: Package and verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/apk
+          cp app/build/outputs/apk/debug/app-debug.apk build/apk/luna18-infinite-coins-debug.apk
+          test -s build/apk/luna18-infinite-coins-debug.apk
+          unzip -t build/apk/luna18-infinite-coins-debug.apk | tail -n 2
+          sha256sum build/apk/luna18-infinite-coins-debug.apk
+
+      - name: Upload infinite-currency APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: luna18-infinite-currency-debug-apk
+          path: build/apk/luna18-infinite-coins-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Persist imported Android project in luna_18
+        if: env.BOOTSTRAPPED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .gitignore build.gradle gradle.properties settings.gradle app scripts tests
+          if ! git diff --cached --quiet; then
+            git commit -m "Import tested Android project from luna_16 while preserving luna_18 engine"
+            git push origin HEAD:main
+          fi
