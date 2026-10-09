@@ -17,6 +17,7 @@ jobs:
           persist-credentials: true
 
       - name: Get tested luna_16 Android foundation
+        if: ${{ hashFiles('app/build.gradle') == '' }}
         uses: actions/checkout@v4
         with:
           repository: 752960522qq-ai/luna_16
