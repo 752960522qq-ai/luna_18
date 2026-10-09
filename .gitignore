@@ -1,0 +1,17 @@
+.gradle/
+.idea/
+build/
+app/build/
+local.properties
+*.keystore
+*.jks
+*.p12
+*.apk
+*.zip
+node_modules/
+test-output/
+
+web/node_modules/
+web/dist/
+web/public/
+web/.openai/
